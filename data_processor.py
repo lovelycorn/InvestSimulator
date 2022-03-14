@@ -15,6 +15,8 @@ def read():
     return(df_result)
 
 # read data from .csv file, date in ascending order, and from start date to end time [start, end]
+# for test now, reserved
+# todo
 def read_by_date(start, end):
     df = read()
     for index, row in df.iterrows():
@@ -22,6 +24,6 @@ def read_by_date(start, end):
         print(row["日期"])
 
 df = read()
-for index, row in df.iterrows():
-    print(index)
-    print(row["日期"])
+# for index, row in df.iterrows():
+#     print(index)
+#     print(row["日期"])
