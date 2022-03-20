@@ -15,7 +15,7 @@ def read():
     # step 3, format date as our way
     for index, row in df_result.iterrows():
         df_result.loc[index, "日期"] = row["日期"].replace("-", "")
-    return(df_result)
+    return df_result
 
 # read data from .csv file, date in ascending order, and from start date to end time [start, end]
 # now start and end should be marketing day and in the .csv file
@@ -40,5 +40,7 @@ def read_by_date(start, end):
             start_index = index
         if row["日期"] == end:
             end_index = index
+    df_result = df.iloc[start_index:end_index,:]
+    df_result = df_result.reset_index(drop=True)
     print("---------------------read_by_date end---------------------------")
-    return df.iloc[start_index:end_index,:]
+    return df_result
