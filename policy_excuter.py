@@ -23,27 +23,26 @@ def init(code, start, end, quantity, expected_rate, deal_size):
     if start_data["开盘价"] == 0:
         print("sorry, you meet a suspended day")
         return
-    capital_money = quantity * start_data["开盘价"]
+    capital_money = quantity * start_data["收盘价"]
+    # dynamic value part, daily settlement
+    g_table.at[g_table.first_valid_index(), "持股数"] = quantity
+    g_table.at[g_table.first_valid_index(), "每股成本"] = g_table.at[g_table.first_valid_index(), "收盘价"]
+    g_table.at[g_table.first_valid_index(), "总成本"] = capital_money
+    #amount = float(capital_money) * (1 + (float(start_data["涨跌幅"]) / 100))
+    #profit = amount - capital_money
+    amount = capital_money
+    profit = 0
+    g_table.at[g_table.first_valid_index(), "场内资金"] = amount
+    g_table.at[g_table.first_valid_index(), "收益"] = profit # 场内资金 - 总成本
+    g_table.at[g_table.first_valid_index(), "总涨幅"] =  profit / capital_money # 总利润 / 总成本
+    g_table.at[g_table.first_valid_index(), "买进次数"] = 0
+    g_table.at[g_table.first_valid_index(), "卖出次数"] = 0
+    g_table.at[g_table.first_valid_index(), "总操作次数"] = 0
     # add my report data column
-    # static value part
-    g_table["初始股价"] = g_table.at[g_table.first_valid_index(), "开盘价"]
-
     up_limit = capital_money * (1 + expected_rate)
     down_limit = capital_money * (1 - expected_rate)
     g_table["期望上限"] = up_limit
     g_table["期望下限"] = down_limit
-    # dynamic value part, daily settlement
-    g_table.at[g_table.first_valid_index(), "持股数"] = quantity
-    g_table.at[g_table.first_valid_index(), "成本"] = capital_money
-    amount = capital_money * (1 + (start_data["涨跌幅"] / 100))
-    profit = amount - capital_money
-    g_table.at[g_table.first_valid_index(), "场内资金"] = amount
-    g_table.at[g_table.first_valid_index(), "收益"] = profit # 场内资金 - 成本
-    g_table.at[g_table.first_valid_index(), "总涨幅"] =  profit / capital_money # 总利润 / 总成本
-    g_table.at[g_table.first_valid_index(), "操作码"] = 0 # 0--不操作, 1--买进, -1--卖出
-    g_table.at[g_table.first_valid_index(), "买进次数"] = 0
-    g_table.at[g_table.first_valid_index(), "卖出次数"] = 0
-    g_table.at[g_table.first_valid_index(), "总操作次数"] = 0
     print(g_table)
     print("-------init end-------")
 
@@ -70,48 +69,50 @@ def do_with_simple(table, deal_size):
         if index == 0:
             print("first line, let's go")
             continue
-
         # pass and copy when suspended day
         if row["收盘价"] == 0:
             suspended_count += 1
-            table.at[index, "持股数"] = table.at[pre_index, "持股数"] 
-            table.at[index, "成本"] = table.at[pre_index, "成本"] 
+            table.at[index, "持股数"] = table.at[pre_index, "持股数"]
+            table.at[index, "每股成本"] = table.at[pre_index, "每股成本"]
+            table.at[index, "总成本"] = table.at[pre_index, "总成本"]
             table.at[index, "场内资金"] = table.at[pre_index, "场内资金"]
-            table.at[index, "收益"] = table.at[pre_index, "收益"] 
-            table.at[index, "总涨幅"] =  table.at[pre_index, "总涨幅"] 
-            table.at[index, "买进次数"] = table.at[pre_index, "买进次数"] 
-            table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"] 
-            table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"] 
-            table.at[next_index, "操作码"] = table.at[index, "操作码"] 
-            continue
-
-        next_index = index + 1
-        pre_index = index - 1
-        # do_operate()
-        if row["操作码"] == 1:
-            # 执行买入策略
-            table.at[index, "持股数"] = table.at[pre_index, "持股数"] + deal_size
-            table.at[index, "成本"] = table.at[pre_index, "成本"] + deal_size * table.at[index, "开盘价"]
-            table.at[index, "场内资金"] = table.at[pre_index, "场内资金"] + deal_size * table.at[index, "开盘价"]
             table.at[index, "收益"] = table.at[pre_index, "收益"]
-            table.at[index, "总涨幅"] = table.at[index, "收益"] / table.at[index, "成本"]
+            table.at[index, "总涨幅"] =  table.at[pre_index, "总涨幅"]
+            table.at[index, "买进次数"] = table.at[pre_index, "买进次数"]
+            table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"]
+            table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"]
+            continue
+        pre_index = index - 1
+        hold_size = table.at[pre_index, "持股数"]
+        new_captal = deal_size * ((table.at[index, "开盘价"] + table.at[index, "收盘价"]) / 2)
+        # 操作
+        if float(table.at[pre_index, "涨跌幅"]) <= -5:
+            # 执行买入策略
+            table.at[index, "持股数"] = hold_size + deal_size
+            table.at[index, "每股成本"] = (table.at[pre_index, "场内资金"] + new_captal) / (hold_size + deal_size)
+            table.at[index, "总成本"] = table.at[pre_index, "总成本"] + new_captal
+            table.at[index, "场内资金"] = table.at[pre_index, "场内资金"] + new_captal
+            table.at[index, "收益"] = table.at[pre_index, "收益"]
+            table.at[index, "总涨幅"] = table.at[index, "收益"] / table.at[index, "总成本"]
             table.at[index, "买进次数"] = table.at[pre_index, "买进次数"] + 1
             table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"] 
             table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"] + 1
-        elif row["操作码"] == -1:
+        elif float(table.at[pre_index, "涨跌幅"]) >= 5:
             # 执行卖出策略
-            table.at[index, "持股数"] = table.at[pre_index, "持股数"] - deal_size
-            table.at[index, "成本"] = table.at[pre_index, "成本"] - deal_size * table.at[index, "开盘价"]
-            table.at[index, "场内资金"] = table.at[pre_index, "场内资金"] - deal_size * table.at[index, "开盘价"]
+            table.at[index, "持股数"] = hold_size - deal_size
+            table.at[index, "每股成本"] = (table.at[pre_index, "场内资金"] - new_captal) / (hold_size - deal_size)
+            table.at[index, "总成本"] = table.at[pre_index, "总成本"] - new_captal
+            table.at[index, "场内资金"] = table.at[pre_index, "场内资金"] - new_captal
             table.at[index, "收益"] = table.at[pre_index, "收益"]
-            table.at[index, "总涨幅"] = table.at[index, "收益"] / table.at[index, "成本"]
+            table.at[index, "总涨幅"] = table.at[index, "收益"] / table.at[index, "总成本"]
             table.at[index, "买进次数"] = table.at[pre_index, "买进次数"]
             table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"] + 1
             table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"] + 1
         else:
             # 无策略，复制
-            table.at[index, "成本"] = table.at[pre_index, "成本"]
             table.at[index, "持股数"] = table.at[pre_index, "持股数"]
+            table.at[index, "每股成本"] = table.at[pre_index, "每股成本"]
+            table.at[index, "总成本"] = table.at[pre_index, "总成本"]
             table.at[index, "场内资金"] = table.at[pre_index, "场内资金"]
             table.at[index, "收益"] = table.at[pre_index, "收益"]
             table.at[index, "总涨幅"] = table.at[pre_index, "总涨幅"]
@@ -119,17 +120,10 @@ def do_with_simple(table, deal_size):
             table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"]
             table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"]
         
-        # do decision
-        #case 1, normal trading day, More than 5% increase
-        if float(row["涨跌幅"]) >= 5:
-            print("up to 5%, operation sale")
-            table.at[next_index, "操作码"] = -1
-            continue
-        #case 2, normal trading day, Less than 5% increase
-        if float(row["涨跌幅"]) <= -5:
-            print("down to -5%, operation buy")
-            table.at[next_index, "操作码"] = 1
-            continue
+        # 结算
+        table.at[index, "场内资金"] = table.at[index, "收盘价"] * table.at[index, "持股数"]  # 收盘价 * 持股数
+        table.at[index, "收益"] = table.at[index, "场内资金"] - table.at[index, "总成本"] # 场内资金 - 总成本
+        table.at[index, "总涨幅"] = table.at[index, "收益"] / table.at[index, "总成本"] # 收益 / 总成本
     print("g table in do with simple")
     print(g_table)
     print("-------do_simple end-------")
@@ -143,10 +137,10 @@ print("**********************************************************************")
 print("************************simple policy begin *********************************")
 print("**********************************************************************")
 
-init(600745, "19990104", "20220304", 15000, 0.3, 100)
+init(600745, "19990104", "19990108", 15000, 0.3, 100)
 
 # test do_with_simple
-do_with_simple(g_table)
+do_with_simple(g_table, 100)
 
 print("**********************************************************************")
 print("************************simple policy end *********************************")

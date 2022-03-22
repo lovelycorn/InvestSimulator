@@ -40,7 +40,7 @@ def read_by_date(start, end):
             start_index = index
         if row["日期"] == end:
             end_index = index
-    df_result = df.iloc[start_index:end_index,:]
+    df_result = df.iloc[start_index:end_index + 1,:]
     df_result = df_result.reset_index(drop=True)
     print("---------------------read_by_date end---------------------------")
     return df_result
