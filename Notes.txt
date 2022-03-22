@@ -17,3 +17,8 @@ NumPy SciPy pandas Matplotlib
 适用于股票：稳定型股票
 
 如果涨跌幅绝对值超过5%
+
+
+基于每日
+先操作 当日操作记录
+再结算
