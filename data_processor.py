@@ -12,7 +12,9 @@ def read():
     # step 2, reverse the index
     df_reverse = df.reindex(index=df.index[::-1])
     df_result = df_reverse.reset_index(drop=True)
-    # step 3, format date as our way
+    # step 3, remove redundant column
+    df_result.drop(["换手率", "成交量", "成交金额", "总市值", "流通市值"], axis=1, inplace=True)
+    # step 4, format date as our way
     for index, row in df_result.iterrows():
         df_result.loc[index, "日期"] = row["日期"].replace("-", "")
     return df_result
