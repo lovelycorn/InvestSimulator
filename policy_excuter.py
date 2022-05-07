@@ -14,7 +14,7 @@ g_deal_size = 0
 # @end the time you leave
 # @quantity number of stock
 # @expected_rate rate of expected
-def init(code, start, end, quantity, expected_rate, deal_size):
+def init(code, start, end, quantity, pool_money, deal_size):
     print("-------init start-------")
     global g_table
     g_table = dp.read_by_date(start, end)
@@ -25,16 +25,16 @@ def init(code, start, end, quantity, expected_rate, deal_size):
     if start_data["开盘价"] == 0:
         print("sorry, you meet a suspended day")
         return
-    capital_money = quantity * start_data["收盘价"]
+    capital_money = quantity * start_data["收盘价"] # 以收盘价买入，总价即买入市值
     # dynamic value part, daily settlement
-    g_table.at[g_table.first_valid_index(), "持股数"] = quantity
-    g_table.at[g_table.first_valid_index(), "每股成本"] = g_table.at[g_table.first_valid_index(), "收盘价"] # 每股成本 = 成本 / 股数
-    g_table.at[g_table.first_valid_index(), "场内资金"] = capital_money # 每次交易，买进卖出总量
-    g_table.at[g_table.first_valid_index(), "收益"] = 0 # （现价 - 每股成本）*持股数
-    g_table.at[g_table.first_valid_index(), "总涨幅"] =  0 # （场内资金 + 场外资金）/ 股本
-    g_table.at[g_table.first_valid_index(), "场外资金"] = 0
-    g_table.at[g_table.first_valid_index(), "资金池"] = capital_money # 资金池 = 场内资金 + 场外资金
-    g_table.at[g_table.first_valid_index(), "总收益"] = 0 # 资金池 - 股本
+    g_table.at[g_table.first_valid_index(), "股票市值"] = capital_money
+    g_table.at[g_table.first_valid_index(), "结存数量"] = quantity
+    g_table.at[g_table.first_valid_index(), "结存成本"] = capital_money   #结存股票成本= ∑股票买入价格*数量- ∑股票卖出成本 ∑股票卖出成本=∑股票卖出时的单位成本*数量
+    g_table.at[g_table.first_valid_index(), "单位成本"] = g_table.at[g_table.first_valid_index(), "结存成本"] / g_table.at[g_table.first_valid_index(), "结存数量"]  # 单位成本 = 成本 / 股数
+    g_table.at[g_table.first_valid_index(), "股票浮盈亏"] = g_table.at[g_table.first_valid_index(), "股票市值"] - g_table.at[g_table.first_valid_index(), "结存成本"]  # 股票市值 - 结存成本
+    g_table.at[g_table.first_valid_index(), "处置收益总额"] = 0 # 处置收益=（处置股票价格 - 单位成本）*交易数量 累加
+    g_table.at[g_table.first_valid_index(), "收益总额"] = g_table.at[g_table.first_valid_index(), "处置收益总额"] +  g_table.at[g_table.first_valid_index(), "股票浮盈亏"] # 处置收益总额 + 股票浮盈亏
+    g_table.at[g_table.first_valid_index(), "收益率"] =  g_table.at[g_table.first_valid_index(), "股票浮盈亏"] / g_table.at[g_table.first_valid_index(), "结存成本"] # 收益总额/ 结存成本
     g_table.at[g_table.first_valid_index(), "买进次数"] = 0
     g_table.at[g_table.first_valid_index(), "卖出次数"] = 0
     g_table.at[g_table.first_valid_index(), "总操作次数"] = 0
@@ -55,63 +55,66 @@ def do_with_simple(table, deal_size):
         # pass and copy when suspended day
         if row["收盘价"] == 0:
             suspended_count += 1
-            table.at[index, "持股数"] = table.at[pre_index, "持股数"]
-            table.at[index, "每股成本"] = table.at[pre_index, "每股成本"]
-            table.at[index, "场内资金"] = table.at[pre_index, "场内资金"]
-            table.at[index, "收益"] = table.at[pre_index, "收益"]
-            table.at[index, "总涨幅"] =  table.at[pre_index, "总涨幅"]
-            table.at[index, "落盘收益"] = table.at[pre_index, "落盘收益"]
-            table.at[index, "总收益"] = table.at[pre_index, "总收益"]
+            table.at[index, "股票市值"] = table.at[pre_index, "股票市值"]
+            table.at[index, "结存数量"] = table.at[pre_index, "结存数量"]
+            table.at[index, "结存成本"] = table.at[pre_index, "结存成本"]
+            table.at[index, "单位成本"] = table.at[pre_index, "单位成本"]
+            table.at[index, "股票浮盈亏"] =  table.at[pre_index, "股票浮盈亏"]
+            table.at[index, "处置收益总额"] = table.at[pre_index, "处置收益总额"]
+            table.at[index, "收益总额"] = table.at[pre_index, "收益总额"]
+            table.at[index, "收益率"] = table.at[pre_index, "收益率"]
             table.at[index, "买进次数"] = table.at[pre_index, "买进次数"]
             table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"]
             table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"]
             continue
+        # 正常交易日
         pre_index = index - 1
-        hold_size = table.at[pre_index, "持股数"]
-        new_captal = deal_size * ((table.at[index, "开盘价"] + table.at[index, "收盘价"]) / 2)
+        hold_size = table.at[pre_index, "结存数量"]
+        current_price = ((table.at[index, "开盘价"] + table.at[index, "收盘价"]) / 2)
+        new_captal = deal_size * current_price
         # 操作
         if float(table.at[pre_index, "涨跌幅"]) <= -5:
             # 执行买入策略
-            table.at[index, "持股数"] = hold_size + deal_size
-            table.at[index, "每股成本"] = 0
-            table.at[index, "场内资金"] = table.at[pre_index, "场内资金"] + new_captal
-            table.at[index, "收益"] = table.at[pre_index, "收益"]
-            table.at[index, "总涨幅"] = 0
-            table.at[index, "落盘收益"] = table.at[pre_index, "落盘收益"] - new_captal
-            table.at[index, "总收益"] = table.at[pre_index, "总收益"] # 收益 + 落盘收益
+            table.at[index, "结存数量"] = hold_size + deal_size
+            table.at[index, "股票市值"] = table.at[index, "结存数量"] * current_price # 股票现价 * 结存数量
+            table.at[index, "结存成本"] = table.at[pre_index, "结存成本"] + deal_size * current_price #结存股票成本= ∑股票买入价格*数量- ∑股票卖出成本  ∑股票卖出成本=∑股票卖出时的单位成本*数量
+            table.at[index, "单位成本"] = table.at[index, "结存成本"] / table.at[index, "结存数量"] # 单位成本 = 结存成本 / 结存数量
+            table.at[index, "股票浮盈亏"] = table.at[index, "股票市值"] - table.at[index, "结存成本"]  # 股票市值 - 结存成本
+            table.at[index, "处置收益总额"] = table.at[pre_index, "处置收益总额"] + 0 # 买入操作无处置收益
+            table.at[index, "收益总额"] = table.at[index, "处置收益总额"] + table.at[index, "股票浮盈亏"]  # 处置收益总额 + 股票浮盈亏
+            table.at[index, "收益率"] = table.at[index, "收益总额"] / table.at[index, "结存成本"] # 收益总额/ 结存成本
             table.at[index, "买进次数"] = table.at[pre_index, "买进次数"] + 1
             table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"] 
             table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"] + 1
         elif float(table.at[pre_index, "涨跌幅"]) >= 5:
             # 执行卖出策略
-            table.at[index, "持股数"] = hold_size - deal_size
-            table.at[index, "每股成本"] = 0
-            table.at[index, "场内资金"] = table.at[pre_index, "场内资金"] - new_captal
-            table.at[index, "收益"] = table.at[pre_index, "收益"]
-            table.at[index, "总涨幅"] = 0
-            table.at[index, "落盘收益"] = table.at[pre_index, "落盘收益"] + (new_captal - (table.at[index, "每股成本"] * deal_size))
-            table.at[index, "总收益"] = table.at[pre_index, "总收益"] # 收益 + 落盘收益
+            table.at[index, "结存数量"] = hold_size - deal_size
+            table.at[index, "股票市值"] = table.at[index, "结存数量"] * current_price # 股票现价 * 结存数量
+            table.at[index, "结存成本"] = table.at[pre_index, "结存成本"] - table.at[pre_index, "单位成本"] * deal_size # 结存股票成本= ∑股票买入价格*数量- ∑股票卖出成本  ∑股票卖出成本=∑股票卖出时的单位成本*数量
+            table.at[index, "单位成本"] = table.at[index, "结存成本"] / table.at[index, "结存数量"] # 单位成本 = 结存成本 / 结存数量
+            table.at[index, "股票浮盈亏"] = table.at[index, "股票市值"] - table.at[index, "结存成本"]  # 股票市值 - 结存成本
+            table.at[index, "处置收益总额"] = table.at[pre_index, "处置收益总额"] + (current_price - table.at[pre_index, "单位成本"])*deal_size # 处置收益= 处置收益 +（处置股票价格 - 单位成本）*交易数量
+            table.at[index, "收益总额"] = table.at[index, "处置收益总额"] + table.at[index, "股票浮盈亏"]  # 处置收益总额 + 股票浮盈亏
+            table.at[index, "收益率"] = table.at[index, "收益总额"] / table.at[index, "结存成本"] # 收益总额/ 结存成本            
             table.at[index, "买进次数"] = table.at[pre_index, "买进次数"]
-            table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"] + 1
+            table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"] + 1 
             table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"] + 1
         else:
             # 无策略，复制
-            table.at[index, "持股数"] = table.at[pre_index, "持股数"]
-            table.at[index, "每股成本"] = table.at[pre_index, "每股成本"]
-            table.at[index, "场内资金"] = table.at[pre_index, "场内资金"]
-            table.at[index, "收益"] = table.at[pre_index, "收益"]
-            table.at[index, "总涨幅"] = table.at[pre_index, "总涨幅"]
-            table.at[index, "落盘收益"] = table.at[pre_index, "落盘收益"]
-            table.at[index, "总收益"] = table.at[pre_index, "总收益"]
+            table.at[index, "结存数量"] = table.at[pre_index, "结存数量"]
+            table.at[index, "结存成本"] = table.at[pre_index, "结存成本"]
+            table.at[index, "单位成本"] = table.at[pre_index, "单位成本"]
+            table.at[index, "处置收益总额"] = table.at[pre_index, "处置收益总额"]
             table.at[index, "买进次数"] = table.at[pre_index, "买进次数"]
             table.at[index, "卖出次数"] = table.at[pre_index, "卖出次数"]
             table.at[index, "总操作次数"] = table.at[pre_index, "总操作次数"]
         
-        # 结算
-        table.at[index, "场内资金"] = table.at[index, "收盘价"] * table.at[index, "持股数"]  # 收盘价 * 持股数
-        table.at[index, "收益"] = 0
-        table.at[index, "总涨幅"] = 0
-        table.at[index, "总收益"] = 0
+        # 收盘结算
+        table.at[index, "股票市值"] = table.at[index, "结存数量"] * table.at[index, "收盘价"] # 股票现价 * 结存数量
+        table.at[index, "股票浮盈亏"] = table.at[index, "股票市值"] - table.at[index, "结存成本"]  # 股票市值 - 结存成本
+        table.at[index, "收益总额"] = table.at[index, "处置收益总额"] + table.at[index, "股票浮盈亏"]  # 处置收益总额 + 股票浮盈亏
+        table.at[index, "收益率"] = table.at[index, "收益总额"] / table.at[index, "结存成本"] # 收益总额/ 结存成本
+
     print("g table in do with simple")
     print(g_table)
     print("-------do_simple end-------")
