@@ -140,6 +140,7 @@ init(600745, "20210108", "20210225", 1000, 0.3, 100)
 # test do_with_simple
 do_with_simple(g_table, 100)
 
+
 # save result into .csv files
 export_result(g_table)
 print("**********************************************************************")
