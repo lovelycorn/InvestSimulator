@@ -122,7 +122,10 @@ def do_with_simple(table, deal_size):
 # save result into .csv files 
 def export_result(table):
     # code_date
-    path = os.getcwd() + '\\report\\'
+    # for windows
+    #path = os.getcwd() + '\\report\\'
+    # for linux
+    path = os.getcwd() + '//report//'
     print(time.strftime("%Y%m%d%H%M%S", time.localtime()))
     file_name = time.strftime("%Y%m%d%H%M%S", time.localtime()) + ".csv"
     print(path + file_name)

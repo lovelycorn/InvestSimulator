@@ -3,7 +3,10 @@ import os;
 
 # read data from .csv file, date in ascending order
 def read():
-    path = os.getcwd() + '\data\\'
+    # for windows
+    #path = os.getcwd() + '\data\\'
+    # for linux
+    path = os.getcwd() + '/data//'
     name = '600745_all.csv'
     # Data has chinese, using gbk encoding.
     # Chinese code style: utf-8,gbk,gb2312,gb18030,cp936,big5, try them one by one.
